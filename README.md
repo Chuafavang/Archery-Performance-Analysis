@@ -10,7 +10,6 @@ The main question was:
 
 Since "good archer" is not precisely defined, this analysis uses **accuracy**, calculated as the proportion of arrows that successfully hit the target, as a measure of archery performance.
 
-The analysis was completed as part of **MATHS 7107 – Data Taming** using **R and R Markdown**.
 
 ## Objectives
 
@@ -47,8 +46,7 @@ The `RES` variable was also separated into:
 
 Two observations were identified as having unrealistic experience values equivalent to approximately 125 years of archery experience and were removed during data cleaning.
 
-After cleaning, **553 observations** remained. A reproducible random sample of **450 archers** was then selected using the student number as the random seed.
-
+After cleaning, **553 observations** remained.
 ## Methodology
 
 The analysis followed these main steps:
@@ -126,17 +124,17 @@ Therefore, the analysis provides evidence that **greater archery experience is s
 ## Repository Structure
 
 ```text
-Archery-Performance-Analysis/
+Archery Performance Analysis/
 │
 ├── README.md
 ├── Report/
-│   └── Archery_Analysis_Report.pdf
+│   └── Archery_Analysis.pdf
 │
 ├── Data/
 │   └── archery_2.csv
 │
 └── SRC/
-    └── archery_analysis.Rmd
+    └── Archery_Analysis.Rmd
 ```
 
 ## Tools
@@ -147,9 +145,6 @@ Archery-Performance-Analysis/
 
 **Main libraries:** `tidyverse`, `lubridate`, `caret`, `moments`, `inspectdf`, `stringr`
 
-## Author
 
-**Chuafa Vachoima**
 
-MATHS 7107 – Data Taming
-University of Adelaide
+
