@@ -1,0 +1,390 @@
+---
+title: "Archery Performance Analysis"
+subtitle: "The Relationship Between Experience and Shooting Accuracy"
+author: "Chuafa Vachoima"
+date: "14 July 2026"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    keep_tex: true
+geometry: margin=1in
+fontsize: 11pt
+header-includes:
+  - \usepackage{xcolor}
+  - \definecolor{accent}{HTML}{1F4E79}
+---
+
+
+\newpage
+
+# Executive Summary
+
+This report investigates the relationship between **archery experience and shooting accuracy** using tournament data from an archery club. The analysis considers how accuracy changes with the number of days an archer has practised and uses a linear model to make predictions at selected experience levels.
+
+The original dataset contained 555 archers. After de-identification and data cleaning, two observations with unrealistic experience values were removed, leaving 553 observations. A reproducible random sample of 450 archers was then selected for the analysis.
+
+Accuracy was calculated as the proportion of arrows that hit the target. Exploratory analysis showed a strong positive relationship between experience and accuracy, although the relationship appeared to become less steep at higher levels of experience. A Box-Cox transformation with an estimated $\lambda = 2.4$ was applied before fitting the linear model.
+
+The fitted model achieved an $R^2$ of approximately **0.947**. Predicted accuracy increased from **42.4% after 2 years** of experience to **88.5% after 25 years**. These results suggest that greater experience is strongly associated with higher accuracy in this sample. However, the analysis does not establish a fixed number of years required to become a "good archer", because the definition of good performance is subjective and other factors affecting performance are not included in the model.
+
+> **Key takeaway:** Experience is strongly associated with archery accuracy in this dataset, but the model should be interpreted only within a realistic range of experience.
+
+# Introduction
+
+## Background
+
+The archery club would like to provide potential recruits with a quantitative answer to the question: **"How long does it take to become a good archer?"**
+
+This question is not directly well-posed for statistical analysis because "good archer" does not have a defined performance threshold. Therefore, this analysis uses **shooting accuracy**, calculated as the proportion of arrows that hit the target, as a measurable indicator of performance.
+
+## Analysis Approach
+
+The analysis follows the required Data Taming workflow: loading and inspecting the data, de-identifying participants, transforming and cleaning the variables, drawing a reproducible random sample, exploring the distributions, examining the relationship between experience and accuracy, fitting a linear model, checking its assumptions, and making predictions with 90% confidence intervals.
+
+---
+
+# Data Preparation
+
+The following sections document the data preparation and exploratory steps required for the analysis. The original R code has been retained so that the analysis remains fully reproducible.
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE)
+```
+
+```{r }
+library(tidyverse)
+library(inspectdf)
+library(stringr)
+library(lubridate)
+library(caret)
+library(moments)
+library(tinytex)
+```
+
+## Loading and Inspecting the Data
+
+```{r}
+archery_raw <- read_csv("./data/archery_2.csv")
+archery_raw
+dim(archery_raw) #dimention of the data set
+
+```
+
+## De-identification
+```{r}
+archery_clean <- archery_raw
+archery_clean <- mutate(archery_clean, "ID"=1:555) #add unique id column
+archery_clean <- relocate(archery_clean,"ID",.before=Archer)#relocate id to far left
+archery_clean <-mutate(archery_clean,Archer=NULL)# remove Archery column
+```
+Remove column Archer to remove the name of the archers.
+
+## Calculating Archery Experience
+```{r}
+archery_clean <- mutate(archery_clean,"XP"=dmy("16/06/2024")-dmy(archery_clean$Commenced))
+archery_clean <- relocate(archery_clean,"XP",.before=RES) #relocate clolumn XP
+```
+I included the day of tournament as there was a practice session before tournament. It should be considered as 1 day of experience before the tournament. I shifted the date from 15 June to 16 June to include the the tournament day as experience. 
+
+## Separating Tournament Results
+```{r}
+archery_clean <- mutate(archery_clean,"Arrows"=str_match(RES,"from (\\d+) shots.")[,2],
+                        "Targets"=str_match(RES,"hit (\\d+) times")[,2])
+# add two columns Arrows and Target
+archery_clean <- mutate(archery_clean,RES=NULL) #delete column residual. 
+archery_clean
+dim(archery_clean)
+```
+
+## Variable Types
+
+* ID is categorical ordinal. It is assigned each archery to keep track of change in their data. Hence, the order is important.
+
+* Commenced is categorical ordinal. It indicates the starting date of practice for each archery. Therefore, order is important to let us know the duration of experience each archery has.
+
+* Arrows is quantitative discrete. It is a whole number and represents the total number of arrows an archery shot.
+
+* Targets is quantitative discrete. It is also a whole number that represent the number of target hit.
+
+
+## Data Cleaning and Taming
+```{r}
+archery_clean <- rename(archery_clean,id=ID)
+archery_clean <- rename(archery_clean,commenced=Commenced)
+archery_clean <- rename(archery_clean,xp=XP)
+archery_clean <- rename(archery_clean,arrows=Arrows)
+archery_clean <- rename(archery_clean,targets=Targets)
+archery_clean$xp <- as.integer(archery_clean$xp)
+archery_clean$arrows <- as.integer(archery_clean$arrows)
+archery_clean$targets <- as.integer(archery_clean$targets)
+archery_clean$id <- as.ordered(archery_clean$id)
+archery_clean$commenced <- dmy(archery_clean$commenced)# change to date
+inspect_na(archery_clean)#check if there is na data
+filter(archery_clean,(arrows>70|arrows<0))# check for out of range data for arrows
+filter(archery_clean,(targets>70|targets<0))# check for out of range data for targets     
+ggplot(archery_clean, aes(xp))+ #check for abnormal data
+  geom_histogram()
+abn_data <- filter(archery_clean,xp>20000)
+abn_data
+archery_clean <-filter(archery_clean,xp<20000)# remove unrealistic xp
+archery_clean
+dim(archery_clean) 
+```
+Rename the variables to lower case according to The Tame Data Conventions. 
+
+* id is categorical ordinal variable so it should be &lt;ord&gt;
+
+* commenced: change to The Tame data Conventions format year-month-day and &lt;date&gt;
+
+* xp, arrows and targets:change to &lt;int&gt;
+
+Inspect NA to check if there is any data missing.
+Filter both targets and arrows to find if there is any data out of range. arrows and targets cannot be negative number and more than 70 as each archer is given up to 70 arrows to shoot.
+
+id 167 and 275 have 45457 days experience which is equivalent to 125 years of experience. This is unrealistic. Hence, we remove the observations. 
+
+## Reproducible Sampling
+```{r}
+set.seed(1896853)
+archery <- sample_n(archery_clean,450) #a random sample of 450 archers
+archery
+dim(archery)
+```
+
+## Calculating Accuracy
+```{r}
+archery <- mutate(archery, "acc"=targets/arrows)
+archery
+dim(archery)
+```
+acc is quantitative continuous. It is derived from the ratio of two integers. The data type in the tible is correct. There is no need to change.
+
+
+## Descriptive Statistics
+```{r}
+inspect_num(archery)
+```
+
+The mean for the number of days of experience is 5406.
+The mean for the accuracy is 0.708
+
+## Standardising Numerical Variables
+```{r}
+archery_preprocess <- preProcess(archery)
+archery_preprocess
+archery_stardize<- predict(archery_preprocess, archery)
+archery_stardize
+dim(archery_stardize)
+```
+
+## Comparing Standardised Variables
+```{r}
+inspect_num(archery_stardize)
+```
+# Variable with higher mean.
+The 2 variables have means very close to zero. We can say that their means are approximately zero.   
+
+# Variable with higher median.
+accuracy has higher median of 0.221
+
+# Varable with higher inter-quartile range
+```{r}
+IQR(archery_stardize$xp)
+IQR(archery_stardize$acc)
+```
+Experience has higher inter-quartile range of 1.74
+
+# Plot histograms of each variable and calculate the skewness.
+```{r}
+ggplot(archery_stardize, aes(xp))+
+  geom_histogram(bins=20,fill="blue",col="black")  
+moments::skewness(archery_stardize$xp)
+```
+The shape of histogram shows similarity to uniform distribution with some fluctuation of the bars. This might be due to the club recruits relative similar number of members in over time.
+
+```{r}
+ggplot(archery_stardize, aes(acc))+
+  geom_histogram(bins=20,fill="blue",col="black")  
+moments::skewness(archery_stardize$acc)
+
+```
+The histogram of accuracy seems to indicate left-skewed distribution.This indicates
+higher tendency of higher accuracy. 
+
+## Experience and Accuracy Relationship
+```{r}
+ggplot(archery, aes(x=xp, y=acc))+
+  geom_point()+
+  geom_smooth(method="lm")
+```
+There is a positive relation between experience and accuracy. However, there seems to be a curve in the relationship. When the archer just started archery and had less experience, the smooth line over estimate the accuracy of archery. The relationship makes sense as we expect accuracy to increase with days of experience ( more practices). For new starter, it might be difficult to hit the target. However, as an archer gains more and more experience, it might be difficult to improve accuracy, resulting in the curve as shown. From the curve in the plot, It coheres with what we found in Q9 as accuracy is left-skewed. The slope of the curve is steep and become more gentle with increase in experience. 
+
+## Box-Cox Transformation
+```{r}
+archery_bc <- BoxCoxTrans(y = archery$acc,x = archery$xp, lambda=seq(-10,10,0.1))
+archery_bc
+archery_bc$lambda
+```
+
+## Applying the Transformation
+```{r}
+archery <- mutate(archery, acc_bc = predict(archery_bc,archery$acc))
+archery
+dim(archery)
+```
+
+## Transformed Data
+```{r}
+ggplot(archery, aes(x=xp, y=acc_bc))+
+  geom_point()+
+  geom_smooth(method="lm")
+ggplot(archery, aes(acc_bc))+
+  geom_histogram(bins=20,fill="blue",col="black")  
+moments :: skewness(archery$acc_bc)
+```
+The plot shows a better linear fit of the data, even though, it still slightly overestimate the accuracy for archery with less experience. The histogram still appears to have slight left skewness. However, the skewness is reduced. The value of skewness for accuracy shift from -0.636 in standardized data to -0.127 (closer to zero) when Box-Cox transformation is applied to the data.  
+
+## Population Linear Model
+$$
+y_i = \beta_0 + \beta_1 x_i + \epsilon_i
+$$
+$y_i$ is the accuracy
+
+$x_i$ is the number of days of experience
+
+$\beta_0$ is the intercept. When experience is 0, accuracy is estimated to be $\beta_0$
+
+$\beta_1$ is the slope. when number of day of experience change by 1, accuracy is estimated to change by $\beta_1$
+
+$\epsilon_i$ is an error term which is the difference between the actual accuracy and the estimated accuracy from the model.
+
+## Sample Regression Line
+
+$$
+y_i^*= \hat{\beta_0} + \hat{\beta_1} x_i
+$$
+$y_i^*$ is the Box-cox transformed accuracy
+
+$x_i$ is the number of days of experience
+
+$\hat{\beta_0}$ is the intercept. When experience is 0, accuracy is estimated to be $\hat{\beta_0}$
+
+$\hat{\beta_1}$ is the slope. when number of day of experience change by 1, accuracy is estimated to change by $\hat{\beta_1}$
+
+
+## Fitting the Linear Model
+
+```{r}
+archery_lm  <- lm(acc_bc ~ xp, data = archery)
+summary(archery_lm)
+```
+
+$$
+y^* = -0.386 + 3.07\times10^{-5} x 
+$$
+$y^*$ is the Box-cox transformed accuracy
+
+$x$ is the number of days of experience
+
+-0.386 is the intercept. When experience is 0, the Box-cox transformed accuracy is estimated to be -0.386
+
+$3.07\times10^{-5}$ is the slope. when number of day of experience change by 1, the Box-cox transformed accuracy is estimated to change by $3.07\times10^{-5}$ 
+# Model Diagnostics
+
+The fitted linear model is assessed against the four assumptions discussed in the course: linearity, constant variance, normally distributed errors, and independence. These checks are used to identify limitations rather than to discard the model required for the assignment.
+
+```{r}
+plot(archery_lm, which=1)#plot to check residual versus fitted plot, check for linearity
+```
+There is no obvious trend in the scatter plot. The line is mostly straight. It might be affected a small number of outliers. This satisfies the assumption of linearity.
+
+```{r}
+plot(archery_lm, which=3)# check Homoscedasticity, noise has the same variance
+```
+There is no apparent trend in the scatter plot. The red line appear to be straight. It indicates that the model has constant spread. Therefore, it satisfies the assumption of constant variance or homoscedasticity. 
+
+```{r}
+plot(archery_lm, which=2)# check if the noise normally distributed
+```
+From the plot, the points lie along the doted line with only tails slightly drifted from the doted line. Hence, it satisfies the assumption that the noise terms are normally distributed. 
+
+The fourth assumption is the error terms are independent. From the data that we collected, we only have experience as predictor. However, there could be other factors that affect the accuracy such as gender or physical fitness which are included into to the error terms making the error terms to correlate with the response variable. 
+
+# Predictions experience of 2, 5, 10, 15, 20 and 25 years.
+
+```{r}
+xp_new  <- tibble(xp = c(2*365.25,5*365.25,10*365.25,15*365.25,20*365.25,25*365.25))
+#assume that there are 356*4+1 days in 4 years, so 1 year, there are 365.25 days
+accuracy_new <- predict(archery_lm, xp_new)
+accuracy_new <-round((accuracy_new*archery_bc$lambda+1)^(1/archery_bc$lambda),3) 
+#convert to original scale 
+accuracy_new
+
+confi <- predict(archery_lm, xp_new, interval = "confidence", level = 0.9)
+confi_convert <- round((confi*archery_bc$lambda+1)^(1/archery_bc$lambda),3)
+#convert to original scale
+confi_convert <-tibble(fit= confi_convert[,"fit"],
+                       lwr=confi_convert[,"lwr"], upr=confi_convert[,"upr"] ) 
+#create a tibble
+confi_convert <- mutate(confi_convert, "diff_upr_lwr"= upr-lwr,
+                        years_of_xp=c(2,5,10,15,20,25))
+confi_convert <- relocate(confi_convert, "years_of_xp",.before=fit)
+confi_convert <- mutate(confi_convert,years_of_xp=as.integer(years_of_xp))
+#change to integer for years of experience
+confi_convert
+```
+
+The accuracy for an archer with experience of 2 years is 0.424. We are 90% confident that an average archer with experience of 2 years will have accuracy between 0.413 and 0.434
+
+The accuracy for an archer with experience of 5 years is 0.520. We are 90% confident that an average archer with experience of 5 years will have accuracy between 0.513 and 0.526
+
+The accuracy for an archer with experience of 10 years is 0.640. We are 90% confident that an average archer with experience of 10 years will have accuracy between 0.636 and 0.643
+
+The accuracy for an archer with experience of 15 years is 0.734. We are 90% confident that an average archer with experience of 15 years will have accuracy between 0.732 and 0.737
+
+The accuracy for an archer with experience of 20 years is 0.815. We are 90% confident that an average archer with experience of 20 years will have accuracy between 0.812 and 0.817
+
+The accuracy for an archer with experience of 25 years is 0.885. We are 90% confident that an average archer with experience of 25 years will have accuracy between 0.882 and 0.888
+
+# Discussion and Conclusion
+
+## Interpretation
+
+```{r}
+inspect_num(archery)
+```
+
+A good archer needs to have accuracy more than mean accuracy 0.708 and It also depends on how we define what a good archer is. If a good archer is a person who has accuracy more or equal to 0.885, it would take 25 years to be a good archery. We also observe that the confidence interval is wider for archers with 2 and 5 years of experience as compared to archers with experience of 10 years and above. This suggests that our prediction of accuracy for archers with fewer years of experience tend be less accurate than those with more experience. 
+
+## Limitations
+
+There is also limitation for this linear model. It suggests that as number of years of experience increases, the accuracy will further increase. However, this might not be the case in reality as the archer's health could affect the accuracy as the archer grow older. Hence, this model might only be accurate for a certain range of number of years of experience. Further, we observe that when number of years of experience increases, the accuracy will exceed 1 which is wrong as accuracy is ratio of targets and arrows, so it cannot exceed 1. Below is the example of calculation for 40 years of experience to substantiate the claim. 
+```{r}
+xp40  <- tibble(xp = 40*365.25)
+accuracy40 <- predict(archery_lm, xp40)
+accuracy40 <-round((accuracy40*2.4+1)^(1/2.4),3) #lambda=2.4, convert to original scale 
+accuracy40
+```
+The accuracy for 40 years of experience is 1.06 which is more than 1. 
+
+
+---
+
+## Conclusion
+
+The analysis provides evidence of a strong positive association between archery experience and shooting accuracy. In the sample, predicted accuracy increased from 42.4% at two years of experience to 88.5% at 25 years.
+
+However, these predictions should not be interpreted as a definitive training timeline. The concept of a "good archer" requires a clearly defined performance threshold, and the model includes experience as its only explanatory variable. In addition, the linear model eventually produces impossible accuracy values above 1 when extrapolated too far beyond the observed data.
+
+Overall, the results suggest that **experience is an important predictor of accuracy, with the largest improvements occurring earlier in an archer's development**, but becoming a good archer depends on more than experience alone.
+
+---
+
+## Appendix: Reproducible R Analysis
+
+All R code used to produce the analysis is retained in the report. This preserves the original coursework workflow while presenting the results in a structure suitable for a professional data analysis report.
