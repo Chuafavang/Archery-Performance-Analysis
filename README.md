@@ -130,7 +130,7 @@ Archery Performance Analysis/
 ├── Report/
 │   └── Archery_Analysis.pdf
 │
-├── Data/
+├── data/
 │   └── archery_2.csv
 │
 └── SRC/
